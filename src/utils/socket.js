@@ -1,0 +1,2 @@
+// WebSockets removed
+export default {};
