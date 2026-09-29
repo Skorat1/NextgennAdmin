@@ -150,6 +150,8 @@ export default function App() {
       if (Array.isArray(gamesData)) {
         setGames(gamesData);
         setDbStatus({ connected: true, checked: true });
+      } else {
+        setDbStatus({ connected: false, checked: true });
       }
 
       if (Array.isArray(usersData)) {
@@ -306,6 +308,46 @@ export default function App() {
     } catch (err) {
       setGames(prev => prev.map(g => ({ ...g, status: 'draft' })));
       showToast('All games set to Draft.');
+    }
+  };
+
+  const handleBulkUpdateStatus = async (gameIds, newStatus) => {
+    if (!gameIds || gameIds.length === 0) return;
+    try {
+      await Promise.allSettled(
+        gameIds.map(id => gamesApi.update(id, { status: newStatus }))
+      );
+      setGames(prev => prev.map(g => {
+        const gid = g.id || g._id;
+        return gameIds.some(id => matchesId({ id }, gid)) ? { ...g, status: newStatus } : g;
+      }));
+      showToast(`Bulk updated ${gameIds.length} games to "${newStatus}"!`);
+    } catch (err) {
+      setGames(prev => prev.map(g => {
+        const gid = g.id || g._id;
+        return gameIds.some(id => matchesId({ id }, gid)) ? { ...g, status: newStatus } : g;
+      }));
+      showToast(`Bulk updated ${gameIds.length} games locally.`);
+    }
+  };
+
+  const handleBulkDelete = async (gameIds) => {
+    if (!gameIds || gameIds.length === 0) return;
+    try {
+      await Promise.allSettled(
+        gameIds.map(id => gamesApi.delete(id))
+      );
+      setGames(prev => prev.filter(g => {
+        const gid = g.id || g._id;
+        return !gameIds.some(id => matchesId({ id }, gid));
+      }));
+      showToast(`Bulk deleted ${gameIds.length} games from database!`, 'error');
+    } catch (err) {
+      setGames(prev => prev.filter(g => {
+        const gid = g.id || g._id;
+        return !gameIds.some(id => matchesId({ id }, gid));
+      }));
+      showToast(`Removed ${gameIds.length} games locally.`, 'error');
     }
   };
 
@@ -650,6 +692,8 @@ export default function App() {
                 onOpenAddModal={() => handleOpenGameModal(null)}
                 onOpenGameModal={handleOpenGameModal}
                 onDraftAll={handleDraftAllGames}
+                onBulkUpdateStatus={handleBulkUpdateStatus}
+                onBulkDelete={handleBulkDelete}
                 onRefresh={fetchAllData}
               />
             )}

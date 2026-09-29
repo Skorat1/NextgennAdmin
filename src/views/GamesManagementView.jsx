@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import GameSandboxModal from '../components/GameSandboxModal';
 import CustomSelect from '../components/CustomSelect';
 import GameMonetizeImportModal from '../components/GameMonetizeImportModal';
 import { parseVideoSource, getGamePreviewVideo } from '../utils/videoHelper';
+import { CONFIG } from '../config';
 
 function AdminGameCardItem({
   game,
@@ -10,7 +11,9 @@ function AdminGameCardItem({
   onToggleFeatured,
   onEditGame,
   onDeleteGame,
-  livePlayersCount = 0
+  livePlayersCount = 0,
+  isSelected = false,
+  onToggleSelect
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const videoRef = useRef(null);
@@ -41,11 +44,30 @@ function AdminGameCardItem({
 
   return (
     <div
-      className="game-admin-card"
+      className={`game-admin-card ${isSelected ? 'card-selected' : ''}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
       <div className="game-card-media" style={{ position: 'relative', overflow: 'hidden' }}>
+        {/* Selection Checkbox */}
+        {onToggleSelect && (
+          <div
+            className={`game-card-select-checkbox ${isSelected ? 'selected' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect(game.id || game._id);
+            }}
+            title={isSelected ? 'Deselect game' : 'Select game for bulk actions'}
+          >
+            <input
+              type="checkbox"
+              checked={!!isSelected}
+              onChange={() => {}}
+              aria-label={`Select ${game.title}`}
+            />
+          </div>
+        )}
+
         <img
           src={game.thumbnail || 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=600'}
           alt={game.title}
@@ -204,6 +226,21 @@ function AdminGameCardItem({
           </button>
 
           <div className="game-card-icon-actions">
+            {/* Direct View on Live Website Portal Link */}
+            <a
+              href={`${CONFIG.PORTAL_URL}/game/${encodeURIComponent(game.id || game._id)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="icon-action-btn portal"
+              title="View on Live Gaming Website"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </a>
+
             <button
               className="icon-action-btn edit"
               title="Edit Game"
@@ -245,15 +282,26 @@ export default function GamesManagementView({
   onOpenAddModal,
   onOpenGameModal,
   onDraftAll,
+  onBulkUpdateStatus,
+  onBulkDelete,
   onRefresh
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
+  const [quickFilter, setQuickFilter] = useState('all');
   const [sortBy, setSortBy] = useState('plays-desc');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
   const [activePlayGame, setActivePlayGame] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(24);
+
+  // Reset pagination on filter/sort changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory, selectedStatus, quickFilter, sortBy, pageSize]);
 
   // Filter and Sort Logic
   const filteredGames = games.filter((game) => {
@@ -273,7 +321,16 @@ export default function GamesManagementView({
     const selStatus = (selectedStatus || 'all').toLowerCase();
     const matchesStatus = selStatus === 'all' || gameStatus === selStatus;
 
-    return matchesSearch && matchesCategory && matchesStatus;
+    // Quick filter chips matching
+    let matchesQuick = true;
+    if (quickFilter === 'featured') matchesQuick = !!game.featured;
+    else if (quickFilter === 'active') matchesQuick = gameStatus === 'active';
+    else if (quickFilter === 'draft') matchesQuick = gameStatus === 'draft';
+    else if (quickFilter === 'maintenance') matchesQuick = gameStatus === 'maintenance';
+    else if (quickFilter === 'video') matchesQuick = !!(game.previewVideo || game.videoUrl);
+    else if (quickFilter === 'popular') matchesQuick = (game.plays || 0) >= 100;
+
+    return matchesSearch && matchesCategory && matchesStatus && matchesQuick;
   }).sort((a, b) => {
     if (sortBy === 'plays-desc') return (b.plays || 0) - (a.plays || 0);
     if (sortBy === 'plays-asc') return (a.plays || 0) - (b.plays || 0);
@@ -286,6 +343,8 @@ export default function GamesManagementView({
   const draftCount = games.filter(g => !g.status || g.status === 'draft').length;
   const featuredCount = games.filter(g => g.featured).length;
   const maintenanceCount = games.filter(g => g.status === 'maintenance').length;
+  const videoCount = games.filter(g => g.previewVideo || g.videoUrl).length;
+  const popularCount = games.filter(g => (g.plays || 0) >= 100).length;
 
   // Calculate live player total
   const totalLivePlayers = games.reduce((sum, g) => {
@@ -295,10 +354,64 @@ export default function GamesManagementView({
     return sum + live;
   }, 0);
 
+  // Pagination calculation
+  const totalItems = filteredGames.length;
+  const isAllPages = pageSize === 'all';
+  const effectivePageSize = isAllPages ? (totalItems || 1) : Number(pageSize);
+  const totalPages = Math.max(1, Math.ceil(totalItems / effectivePageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const startIndex = (safeCurrentPage - 1) * effectivePageSize;
+  const pagedGames = isAllPages ? filteredGames : filteredGames.slice(startIndex, startIndex + effectivePageSize);
+
+  // Multi-selection helpers
+  const toggleSelectGame = (gid) => {
+    if (!gid) return;
+    setSelectedIds(prev =>
+      prev.includes(gid) ? prev.filter(id => id !== gid) : [...prev, gid]
+    );
+  };
+
+  const isAllPageSelected = pagedGames.length > 0 && pagedGames.every(g => selectedIds.includes(g.id || g._id));
+
+  const toggleSelectAllPage = () => {
+    if (isAllPageSelected) {
+      const pageIds = pagedGames.map(g => g.id || g._id);
+      setSelectedIds(prev => prev.filter(id => !pageIds.includes(id)));
+    } else {
+      const pageIds = pagedGames.map(g => g.id || g._id);
+      setSelectedIds(prev => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleBulkAction = async (actionType) => {
+    if (selectedIds.length === 0) return;
+    if (actionType === 'delete') {
+      if (window.confirm(`Delete ${selectedIds.length} selected games? This action will remove them from the database.`)) {
+        if (onBulkDelete) {
+          await onBulkDelete(selectedIds);
+        } else {
+          for (const id of selectedIds) {
+            onDeleteGame(id);
+          }
+        }
+        setSelectedIds([]);
+      }
+    } else if (actionType === 'active' || actionType === 'draft' || actionType === 'maintenance') {
+      if (onBulkUpdateStatus) {
+        await onBulkUpdateStatus(selectedIds, actionType);
+      } else {
+        for (const id of selectedIds) {
+          const target = games.find(g => (g.id || g._id) === id);
+          if (target) onEditGame({ ...target, status: actionType });
+        }
+      }
+      setSelectedIds([]);
+    }
+  };
+
   return (
     <div className="glass-panel">
-      {/* Top Header Row with Metric Pills */}
-
       {/* Metric Summary Counters */}
       <div className="mini-stats-grid">
         <div className="mini-stat-card">
@@ -505,6 +618,82 @@ export default function GamesManagementView({
         </div>
       </div>
 
+      {/* Quick Filter Chips Row */}
+      <div className="quick-filter-chips-row">
+        <span className="quick-filter-label">Quick Filter:</span>
+        {[
+          { id: 'all', label: 'All', count: games.length },
+          { id: 'featured', label: 'Spotlight', icon: '★', count: featuredCount },
+          { id: 'active', label: 'Active Live', count: activeCount },
+          { id: 'draft', label: 'Drafts', count: draftCount },
+          { id: 'maintenance', label: 'Maintenance', count: maintenanceCount },
+          { id: 'video', label: 'Has Video', count: videoCount },
+          { id: 'popular', label: 'Popular (100+)', count: popularCount }
+        ].map((chip) => (
+          <button
+            key={chip.id}
+            type="button"
+            className={`quick-filter-chip ${quickFilter === chip.id ? 'active' : ''}`}
+            onClick={() => setQuickFilter(chip.id)}
+          >
+            {chip.icon && <span style={{ color: '#fbbf24', fontSize: '0.85rem' }}>{chip.icon}</span>}
+            <span>{chip.label}</span>
+            <span className="chip-count">{chip.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Floating Multi-Select Bulk Actions Bar */}
+      {selectedIds.length > 0 && (
+        <div className="bulk-actions-floating-bar">
+          <div className="bulk-bar-info">
+            <span className="bulk-badge">{selectedIds.length}</span>
+            <span>games selected</span>
+          </div>
+          <div className="bulk-bar-actions">
+            <button
+              className="bulk-action-btn success"
+              onClick={() => handleBulkAction('active')}
+              title="Publish selected games live on website"
+            >
+              <span>Publish Active</span>
+            </button>
+            <button
+              className="bulk-action-btn secondary"
+              onClick={() => handleBulkAction('draft')}
+              title="Hide selected games as drafts"
+            >
+              <span>Set Draft</span>
+            </button>
+            <button
+              className="bulk-action-btn warning"
+              onClick={() => handleBulkAction('maintenance')}
+              title="Set selected games to maintenance mode"
+            >
+              <span>Maintenance</span>
+            </button>
+            <button
+              className="bulk-action-btn danger"
+              onClick={() => handleBulkAction('delete')}
+              title="Delete selected games permanently"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              <span>Delete</span>
+            </button>
+            <button
+              className="bulk-action-btn cancel"
+              onClick={() => setSelectedIds([])}
+              title="Clear current selection"
+            >
+              <span>Clear</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Grid Mode View */}
       {viewMode === 'grid' && (
         <div className="games-cards-grid">
@@ -513,7 +702,7 @@ export default function GamesManagementView({
               No games found matching the selected criteria.
             </div>
           ) : (
-            filteredGames.map((game) => {
+            pagedGames.map((game) => {
               const gid = game.id || game._id;
               const liveCount = (activeGameCounts && (activeGameCounts[gid] || activeGameCounts[game.id] || activeGameCounts[game._id])) || 0;
 
@@ -526,6 +715,8 @@ export default function GamesManagementView({
                   onEditGame={onEditGame}
                   onDeleteGame={onDeleteGame}
                   livePlayersCount={liveCount}
+                  isSelected={selectedIds.includes(gid)}
+                  onToggleSelect={toggleSelectGame}
                 />
               );
             })
@@ -539,6 +730,15 @@ export default function GamesManagementView({
           <table className="admin-table">
             <thead>
               <tr>
+                <th style={{ width: 44, textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={isAllPageSelected}
+                    onChange={toggleSelectAllPage}
+                    aria-label="Select all on this page"
+                    title="Select all games on this page"
+                  />
+                </th>
                 <th>Game & Media</th>
                 <th>Category</th>
                 <th>Card Size</th>
@@ -553,18 +753,27 @@ export default function GamesManagementView({
             <tbody>
               {filteredGames.length === 0 ? (
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="10" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     No games match the selected filters.
                   </td>
                 </tr>
               ) : (
-                filteredGames.map((game) => {
+                pagedGames.map((game) => {
                   const gid = game.id || game._id;
                   const gameLive = activeGameCounts && (activeGameCounts[gid] || activeGameCounts[game.id] || activeGameCounts[game._id]);
                   const live = Number(gameLive || 0);
+                  const isSelected = selectedIds.includes(gid);
 
                   return (
-                    <tr key={game.id || game._id}>
+                    <tr key={game.id || game._id} className={isSelected ? 'table-row-selected' : ''}>
+                      <td style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectGame(gid)}
+                          aria-label={`Select ${game.title}`}
+                        />
+                      </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           <img
@@ -609,65 +818,150 @@ export default function GamesManagementView({
                           <span>{game.rating || 5.0}</span>
                         </div>
                       </td>
-                    <td>
-                      <button
-                        className="header-btn"
-                        style={{ fontSize: '0.75rem', padding: '4px 8px', color: game.featured ? '#fbbf24' : 'var(--text-muted)' }}
-                        onClick={() => onToggleFeatured(game.id || game._id)}
-                      >
-                        {game.featured ? 'Yes' : 'No'}
-                      </button>
-                    </td>
-                    <td>
-                      <span className={`status-badge ${game.status || 'draft'}`}>
-                        {game.status || 'draft'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div className="action-btn-group" style={{ justifyContent: 'flex-end' }}>
-                        {game.gameUrl && (
-                          <button
-                            className="icon-action-btn"
-                            title="Play Test"
-                            onClick={() => setActivePlayGame(game)}
+                      <td>
+                        <button
+                          className="header-btn"
+                          style={{ fontSize: '0.75rem', padding: '4px 8px', color: game.featured ? '#fbbf24' : 'var(--text-muted)' }}
+                          onClick={() => onToggleFeatured(game.id || game._id)}
+                        >
+                          {game.featured ? 'Yes' : 'No'}
+                        </button>
+                      </td>
+                      <td>
+                        <span className={`status-badge ${game.status || 'draft'}`}>
+                          {game.status || 'draft'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div className="action-btn-group" style={{ justifyContent: 'flex-end' }}>
+                          {/* View on Live Website Portal Link */}
+                          <a
+                            href={`${CONFIG.PORTAL_URL}/game/${encodeURIComponent(game.id || game._id)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="icon-action-btn portal"
+                            title="View on Live Gaming Website"
                           >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                              <polygon points="5 3 19 12 5 21 5 3" />
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                              <polyline points="15 3 21 3 21 9" />
+                              <line x1="10" y1="14" x2="21" y2="3" />
+                            </svg>
+                          </a>
+
+                          {game.gameUrl && (
+                            <button
+                              className="icon-action-btn"
+                              title="Play Test"
+                              onClick={() => setActivePlayGame(game)}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                                <polygon points="5 3 19 12 5 21 5 3" />
+                              </svg>
+                            </button>
+                          )}
+                          <button
+                            className="icon-action-btn edit"
+                            title="Edit Game"
+                            onClick={() => onEditGame(game)}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                             </svg>
                           </button>
-                        )}
-                        <button
-                          className="icon-action-btn edit"
-                          title="Edit Game"
-                          onClick={() => onEditGame(game)}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                          </svg>
-                        </button>
-                        <button
-                          className="icon-action-btn delete"
-                          title="Delete Game"
-                          onClick={() => {
-                            if (window.confirm(`Delete "${game.title}"?`)) {
-                              onDeleteGame(game.id || game._id);
-                            }
-                          }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
+                          <button
+                            className="icon-action-btn delete"
+                            title="Delete Game"
+                            onClick={() => {
+                              if (window.confirm(`Delete "${game.title}"?`)) {
+                                onDeleteGame(game.id || game._id);
+                              }
+                            }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination Controls Bar */}
+      {filteredGames.length > 0 && (
+        <div className="admin-pagination-container">
+          <div className="pagination-info">
+            Showing <strong>{isAllPages ? 1 : startIndex + 1}</strong> to{' '}
+            <strong>{isAllPages ? totalItems : Math.min(startIndex + effectivePageSize, totalItems)}</strong> of{' '}
+            <strong>{totalItems}</strong> games
+          </div>
+
+          {!isAllPages && totalPages > 1 && (
+            <div className="pagination-controls">
+              <button
+                className="pagination-btn"
+                disabled={safeCurrentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              >
+                ‹ Prev
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - safeCurrentPage) <= 1)
+                .reduce((acc, p, idx, arr) => {
+                  if (idx > 0 && p - arr[idx - 1] > 1) {
+                    acc.push('ellipsis-' + p);
+                  }
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((item) => {
+                  if (typeof item === 'string' && item.startsWith('ellipsis')) {
+                    return <span key={item} className="pagination-ellipsis">…</span>;
+                  }
+                  return (
+                    <button
+                      key={item}
+                      className={`pagination-btn page-num ${safeCurrentPage === item ? 'active' : ''}`}
+                      onClick={() => setCurrentPage(item)}
+                    >
+                      {item}
+                    </button>
+                  );
+                })}
+
+              <button
+                className="pagination-btn"
+                disabled={safeCurrentPage === totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              >
+                Next ›
+              </button>
+            </div>
+          )}
+
+          <div className="pagination-size-selector">
+            <span>Per page:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              className="pagination-select"
+            >
+              <option value={12}>12</option>
+              <option value={24}>24</option>
+              <option value={48}>48</option>
+              <option value={100}>100</option>
+              <option value="all">All ({totalItems})</option>
+            </select>
+          </div>
         </div>
       )}
 

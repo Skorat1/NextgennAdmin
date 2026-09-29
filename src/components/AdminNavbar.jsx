@@ -53,6 +53,29 @@ export default function AdminNavbar({
 
       {/* Right: Actions, Theme Toggle & Live Portal */}
       <div className="header-right">
+        {/* Real-time Server / DB Status Indicator */}
+        <div
+          className={`server-status-pill ${dbStatus?.connected ? 'online' : 'offline'}`}
+          title={
+            dbStatus?.connected
+              ? 'Backend API & Database Connected'
+              : 'Backend Offline • Running in Local Fallback Cache Mode'
+          }
+        >
+          <span className="server-status-dot" />
+          <span className="server-status-text">
+            {dbStatus?.connected ? 'Server Live' : 'Offline Mode'}
+          </span>
+        </div>
+
+        {/* Live Players Pill */}
+        {livePlayerCount > 0 && (
+          <div className="live-players-nav-pill" title={`${livePlayerCount} active players online right now`}>
+            <span className="live-player-pulse-dot" />
+            <span>{livePlayerCount} Online</span>
+          </div>
+        )}
+
         {activeTab === 'games' && onOpenGameModal && (
           <button className="header-btn primary" onClick={() => onOpenGameModal(null)}>
             <span>+ Add Game</span>
