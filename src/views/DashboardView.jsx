@@ -49,14 +49,15 @@ export default function DashboardView({
   }, []);
 
 
-  const totalPlays = games.reduce((acc, g) => acc + (g.plays || 0), 0);
-  const activeGamesCount = games.filter(g => (g.status || 'active') === 'active').length;
-  const pendingSubmissions = submissions.filter(s => s.status === 'pending');
-  const unreadMessages = messages.filter(m => !m.read);
-  const activeGamersCount = users.filter(u => u.role === 'vip' || (u.level && u.level > 1)).length;
+  const totalPlays = games.reduce((acc, g) => acc + ((g && g.plays) || 0), 0);
+  const activeGamesCount = games.filter(g => g && ((g.status || 'active') === 'active')).length;
+  const pendingSubmissions = submissions.filter(s => s && s.status === 'pending');
+  const unreadMessages = messages.filter(m => m && !m.read);
+  const activeGamersCount = users.filter(u => u && (u.role === 'vip' || (u.level && u.level > 1))).length;
 
   // Filtered games for bottom table
   const filteredGames = games.filter(g => {
+    if (!g) return false;
     const matchSearch = (g.title || '').toLowerCase().includes(tableSearch.toLowerCase()) ||
                         (g.category || '').toLowerCase().includes(tableSearch.toLowerCase());
     const matchStatus = statusFilter === 'all' || (g.status || 'active') === statusFilter;
@@ -65,7 +66,7 @@ export default function DashboardView({
   });
 
   // Top 5 Games ordered by plays
-  const topGames = [...games].sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 5);
+  const topGames = [...games].filter(Boolean).sort((a, b) => (b.plays || 0) - (a.plays || 0)).slice(0, 5);
 
   // Recent 3 submissions
   const recentSubmissions = [...submissions].slice(0, 3);
@@ -539,7 +540,10 @@ export default function DashboardView({
               onChange={setCategoryFilter}
               options={[
                 { value: 'all', label: 'All Categories' },
-                ...categories.map(c => ({ value: c.slug || c.name, label: c.name }))
+                ...categories.filter(c => c && c.id !== 'all' && c._id !== 'all').map(c => ({
+                  value: c.id || c._id || c.slug || (c.name || '').toLowerCase(),
+                  label: c.name || c.id || 'Category'
+                }))
               ]}
               minWidth="140px"
             />

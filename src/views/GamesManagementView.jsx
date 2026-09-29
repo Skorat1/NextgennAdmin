@@ -116,7 +116,7 @@ function AdminGameCardItem({
           />
         )}
         
-        <div className="game-card-badge-top" style={{ zIndex: 2, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+        <div className="game-card-badge-top">
           <span className={`status-badge ${game.status || 'draft'}`}>
             {game.status || 'draft'}
           </span>
@@ -128,10 +128,12 @@ function AdminGameCardItem({
               <span>Spotlight</span>
             </span>
           )}
-          <span className="live-player-pulse-tag" title={`${computedLive} Active Players Right Now`}>
-            <span className="live-player-pulse-dot" />
-            <span>{computedLive} LIVE</span>
-          </span>
+          {computedLive > 0 && (
+            <span className="live-player-pulse-tag" title={`${computedLive} Active Players Right Now`}>
+              <span className="live-player-pulse-dot" />
+              <span>{computedLive} LIVE</span>
+            </span>
+          )}
         </div>
 
         {game.gameUrl && (
@@ -205,11 +207,15 @@ function AdminGameCardItem({
 
         {game.tags && game.tags.length > 0 && (
           <div className="game-card-tags-list">
-            {game.tags.slice(0, 3).map((tag, i) => (
-              <span key={i} className="game-card-tag-pill">
-                #{tag}
-              </span>
-            ))}
+            {game.tags.slice(0, 3).map((tag, i) => {
+              const cleanTag = String(tag || '').replace(/^#+/, '').trim();
+              if (!cleanTag) return null;
+              return (
+                <span key={i} className="game-card-tag-pill">
+                  {cleanTag}
+                </span>
+              );
+            })}
           </div>
         )}
 
@@ -305,6 +311,7 @@ export default function GamesManagementView({
 
   // Filter and Sort Logic
   const filteredGames = games.filter((game) => {
+    if (!game) return false;
     const q = searchQuery.trim().toLowerCase();
     const title = (game.title || '').toLowerCase();
     const desc = (game.description || '').toLowerCase();
@@ -332,6 +339,7 @@ export default function GamesManagementView({
 
     return matchesSearch && matchesCategory && matchesStatus && matchesQuick;
   }).sort((a, b) => {
+    if (!a || !b) return 0;
     if (sortBy === 'plays-desc') return (b.plays || 0) - (a.plays || 0);
     if (sortBy === 'plays-asc') return (a.plays || 0) - (b.plays || 0);
     if (sortBy === 'rating-desc') return (b.rating || 0) - (a.rating || 0);
@@ -339,12 +347,12 @@ export default function GamesManagementView({
     return 0;
   });
 
-  const activeCount = games.filter(g => g.status === 'active').length;
-  const draftCount = games.filter(g => !g.status || g.status === 'draft').length;
-  const featuredCount = games.filter(g => g.featured).length;
-  const maintenanceCount = games.filter(g => g.status === 'maintenance').length;
-  const videoCount = games.filter(g => g.previewVideo || g.videoUrl).length;
-  const popularCount = games.filter(g => (g.plays || 0) >= 100).length;
+  const activeCount = games.filter(g => g && g.status === 'active').length;
+  const draftCount = games.filter(g => g && (!g.status || g.status === 'draft')).length;
+  const featuredCount = games.filter(g => g && g.featured).length;
+  const maintenanceCount = games.filter(g => g && g.status === 'maintenance').length;
+  const videoCount = games.filter(g => g && (g.previewVideo || g.videoUrl)).length;
+  const popularCount = games.filter(g => g && (g.plays || 0) >= 100).length;
 
   // Calculate live player total
   const totalLivePlayers = games.reduce((sum, g) => {
@@ -443,64 +451,110 @@ export default function GamesManagementView({
         </div>
       </div>
 
-      {/* Advanced Filter Toolbar */}
-      <div className="filter-bar">
-        <div className="search-input-wrapper">
-          <span className="search-icon-pos">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-          </span>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search by title, tag, ID, or description..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+      {/* Row 1: Search + Primary Actions + View Switcher + Sync */}
+      <div className="filter-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', minWidth: 220, maxWidth: 340 }}>
+          <div className="search-input-wrapper" style={{ width: '100%', maxWidth: '100%' }}>
+            <span className="search-icon-pos">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search games by title, tag, ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <CustomSelect
-            value={selectedCategory}
-            onChange={setSelectedCategory}
-            options={[
-              { value: 'all', label: `All Categories (${games.length})` },
-              ...categories.filter(c => c.id !== 'all').map((c) => {
-                const nameStr = c.name || c.id || 'Category';
-                return {
-                  value: c.id,
-                  label: nameStr.charAt(0).toUpperCase() + nameStr.slice(1)
-                };
-              })
-            ]}
-            minWidth="175px"
-          />
+        {/* Action Buttons & View Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {onOpenAddModal && (
+            <button
+              className="admin-btn primary add-game-btn"
+              style={{
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '0.78rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                boxShadow: '0 2px 10px rgba(37, 99, 235, 0.3)',
+                border: 'none',
+                padding: '7px 14px',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+              onClick={onOpenAddModal}
+              title="Add a new game to catalog"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              <span>Add Game</span>
+            </button>
+          )}
 
-          <CustomSelect
-            value={selectedStatus}
-            onChange={setSelectedStatus}
-            options={[
-              { value: 'all', label: 'All Statuses' },
-              { value: 'active', label: 'Active' },
-              { value: 'maintenance', label: 'Maintenance' },
-              { value: 'draft', label: 'Draft' }
-            ]}
-            minWidth="145px"
-          />
+          {/* Import GameMonetize Button */}
+          <button
+            className="admin-btn primary"
+            style={{
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+              color: '#ffffff',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              boxShadow: '0 2px 10px rgba(2, 132, 199, 0.25)',
+              border: 'none',
+              padding: '7px 14px',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+            onClick={() => setImportModalOpen(true)}
+            title="Import games from GameMonetize"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+            <span>Import GM</span>
+          </button>
 
-          <CustomSelect
-            value={sortBy}
-            onChange={setSortBy}
-            options={[
-              { value: 'plays-desc', label: 'Most Played (Desc)' },
-              { value: 'plays-asc', label: 'Least Played (Asc)' },
-              { value: 'rating-desc', label: 'Highest Rated' },
-              { value: 'title-asc', label: 'Alphabetical (A-Z)' }
-            ]}
-            minWidth="175px"
-          />
+          {onDraftAll && (
+            <button
+              className="admin-btn"
+              style={{
+                background: 'rgba(100, 116, 139, 0.12)',
+                border: '1px solid rgba(100, 116, 139, 0.3)',
+                color: '#64748b',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '7px 12px',
+                borderRadius: '8px'
+              }}
+              onClick={() => {
+                if (window.confirm('Badhi game status DRAFT karvu che? Aa game website par thi hide thai jashe.')) {
+                  onDraftAll();
+                }
+              }}
+              title="Set all games to Draft (hide from website)"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+              <span>Draft All</span>
+            </button>
+          )}
 
           {/* View Mode Switcher */}
           <div className="chart-toggle-group">
@@ -525,6 +579,7 @@ export default function GamesManagementView({
               className="admin-btn secondary"
               onClick={onRefresh}
               title="Refresh from Database"
+              style={{ padding: '7px 12px', fontSize: '0.78rem' }}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="23 4 23 10 17 10" />
@@ -534,113 +589,76 @@ export default function GamesManagementView({
               <span>Sync</span>
             </button>
           )}
-
-          {onOpenAddModal && (
-            <button
-              className="admin-btn primary add-game-btn"
-              style={{
-                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                color: '#ffffff',
-                fontWeight: 800,
-                fontSize: '0.8rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }}
-              onClick={onOpenAddModal}
-              title="Add a new game to catalog"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              <span>Add New Game</span>
-            </button>
-          )}
-
-          {/* Import GameMonetize Button */}
-          <button
-            className="admin-btn primary"
-            style={{
-              background: 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)',
-              color: '#070a13',
-              fontWeight: 800,
-              fontSize: '0.8rem',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              boxShadow: '0 4px 14px rgba(0, 242, 254, 0.25)',
-              border: 'none',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-            onClick={() => setImportModalOpen(true)}
-            title="Import games from GameMonetize"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-            </svg>
-            <span>Import GameMonetize</span>
-          </button>
-
-          {onDraftAll && (
-            <button
-              className="admin-btn"
-              style={{
-                background: 'rgba(100, 116, 139, 0.12)',
-                border: '1px solid rgba(100, 116, 139, 0.3)',
-                color: '#64748b',
-                fontWeight: 700,
-                fontSize: '0.8rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6
-              }}
-              onClick={() => {
-                if (window.confirm('Badhi game status DRAFT karvu che? Aa game website par thi hide thai jashe.')) {
-                  onDraftAll();
-                }
-              }}
-              title="Set all games to Draft (hide from website)"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-              </svg>
-              <span>Draft All Games</span>
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Quick Filter Chips Row */}
-      <div className="quick-filter-chips-row">
-        <span className="quick-filter-label">Quick Filter:</span>
-        {[
-          { id: 'all', label: 'All', count: games.length },
-          { id: 'featured', label: 'Spotlight', icon: '★', count: featuredCount },
-          { id: 'active', label: 'Active Live', count: activeCount },
-          { id: 'draft', label: 'Drafts', count: draftCount },
-          { id: 'maintenance', label: 'Maintenance', count: maintenanceCount },
-          { id: 'video', label: 'Has Video', count: videoCount },
-          { id: 'popular', label: 'Popular (100+)', count: popularCount }
-        ].map((chip) => (
-          <button
-            key={chip.id}
-            type="button"
-            className={`quick-filter-chip ${quickFilter === chip.id ? 'active' : ''}`}
-            onClick={() => setQuickFilter(chip.id)}
-          >
-            {chip.icon && <span style={{ color: '#fbbf24', fontSize: '0.85rem' }}>{chip.icon}</span>}
-            <span>{chip.label}</span>
-            <span className="chip-count">{chip.count}</span>
-          </button>
-        ))}
+      {/* Row 2: Quick Filter Chips + Dropdown Selects */}
+      <div className="filter-actions-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div className="quick-filter-chips-row" style={{ margin: 0, gap: 6 }}>
+          <span className="quick-filter-label" style={{ fontSize: '0.75rem' }}>Filter:</span>
+          {[
+            { id: 'all', label: 'All', count: games.length },
+            { id: 'featured', label: 'Spotlight', icon: '★', count: featuredCount },
+            { id: 'active', label: 'Active', count: activeCount },
+            { id: 'draft', label: 'Drafts', count: draftCount },
+            { id: 'maintenance', label: 'Maintenance', count: maintenanceCount },
+            { id: 'video', label: 'Has Video', count: videoCount }
+          ].map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              className={`quick-filter-chip ${quickFilter === chip.id ? 'active' : ''}`}
+              onClick={() => setQuickFilter(chip.id)}
+              style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+            >
+              {chip.icon && <span style={{ color: '#fbbf24', fontSize: '0.8rem' }}>{chip.icon}</span>}
+              <span>{chip.label}</span>
+              <span className="chip-count">{chip.count}</span>
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <CustomSelect
+            value={selectedCategory}
+            onChange={setSelectedCategory}
+            options={[
+              { value: 'all', label: `All Categories (${games.length})` },
+              ...categories.filter(c => c && c.id !== 'all' && c._id !== 'all').map((c) => {
+                const nameStr = c.name || c.id || c._id || 'Category';
+                return {
+                  value: c.id || c._id || nameStr.toLowerCase(),
+                  label: nameStr.charAt(0).toUpperCase() + nameStr.slice(1)
+                };
+              })
+            ]}
+            minWidth="155px"
+          />
+
+          <CustomSelect
+            value={selectedStatus}
+            onChange={setSelectedStatus}
+            options={[
+              { value: 'all', label: 'All Statuses' },
+              { value: 'active', label: 'Active' },
+              { value: 'maintenance', label: 'Maintenance' },
+              { value: 'draft', label: 'Draft' }
+            ]}
+            minWidth="125px"
+          />
+
+          <CustomSelect
+            value={sortBy}
+            onChange={setSortBy}
+            options={[
+              { value: 'plays-desc', label: 'Most Played' },
+              { value: 'plays-asc', label: 'Least Played' },
+              { value: 'rating-desc', label: 'Highest Rated' },
+              { value: 'title-asc', label: 'Alphabetical' }
+            ]}
+            minWidth="145px"
+          />
+        </div>
       </div>
 
       {/* Floating Multi-Select Bulk Actions Bar */}
@@ -741,19 +759,18 @@ export default function GamesManagementView({
                 </th>
                 <th>Game & Media</th>
                 <th>Category</th>
-                <th>Card Size</th>
-                <th>Live Players</th>
+                <th style={{ textAlign: 'center', width: 80 }}>Live</th>
                 <th>Plays</th>
                 <th>Rating</th>
-                <th>Featured</th>
+                <th style={{ textAlign: 'center', width: 90 }}>Spotlight</th>
                 <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
+                <th style={{ textAlign: 'right', width: 140, minWidth: 140 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredGames.length === 0 ? (
                 <tr>
-                  <td colSpan="10" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     No games match the selected filters.
                   </td>
                 </tr>
@@ -765,7 +782,7 @@ export default function GamesManagementView({
                   const isSelected = selectedIds.includes(gid);
 
                   return (
-                    <tr key={game.id || game._id} className={isSelected ? 'table-row-selected' : ''}>
+                    <tr key={gid} className={isSelected ? 'table-row-selected' : ''}>
                       <td style={{ textAlign: 'center' }}>
                         <input
                           type="checkbox"
@@ -780,32 +797,36 @@ export default function GamesManagementView({
                             src={game.thumbnail || 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=100'}
                             alt={game.title}
                             style={{
-                              width: 48,
-                              height: 48,
-                              borderRadius: 'var(--radius)',
+                              width: 44,
+                              height: 44,
+                              borderRadius: '8px',
                               objectFit: 'cover',
-                              border: '1px solid var(--border-glass)'
+                              border: '1px solid var(--border-glass)',
+                              flexShrink: 0
                             }}
                           />
-                          <div>
-                            <div style={{ fontWeight: 700, color: 'var(--text-heading)', fontSize: '0.92rem' }}>{game.title}</div>
-                            <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>ID: {game.id}</div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, color: 'var(--text-heading)', fontSize: '0.90rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240 }} title={game.title}>
+                              {game.title}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                              ID: {game.id}
+                            </div>
                           </div>
                         </div>
                       </td>
                       <td>
                         <span className="category-pill-tag">{game.category || 'Arcade'}</span>
                       </td>
-                      <td>
-                        <span style={{ fontSize: '0.74rem', background: 'var(--bg-canvas)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', padding: '2px 8px', borderRadius: '6px', fontWeight: 600 }}>
-                          {game.tileSize ? game.tileSize.toUpperCase() : (game.featured ? '2X2' : 'AUTO')}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="live-player-pulse-tag">
-                          <span className="live-player-pulse-dot" />
-                          <span>{live} LIVE</span>
-                        </span>
+                      <td style={{ textAlign: 'center' }}>
+                        {live > 0 ? (
+                          <span className="live-player-pulse-tag" style={{ padding: '2px 8px', fontSize: '0.72rem', display: 'inline-flex' }}>
+                            <span className="live-player-pulse-dot" />
+                            <span>{live}</span>
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', opacity: 0.6, fontSize: '0.85rem' }}>—</span>
+                        )}
                       </td>
                       <td>
                         <span style={{ fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
@@ -818,13 +839,27 @@ export default function GamesManagementView({
                           <span>{game.rating || 5.0}</span>
                         </div>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'center' }}>
                         <button
+                          type="button"
                           className="header-btn"
-                          style={{ fontSize: '0.75rem', padding: '4px 8px', color: game.featured ? '#fbbf24' : 'var(--text-muted)' }}
-                          onClick={() => onToggleFeatured(game.id || game._id)}
+                          style={{
+                            fontSize: '0.74rem',
+                            padding: '3px 8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            background: game.featured ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
+                            borderColor: game.featured ? '#f59e0b' : 'var(--border-color)',
+                            color: game.featured ? '#f59e0b' : 'var(--text-muted)'
+                          }}
+                          onClick={() => onToggleFeatured(gid)}
+                          title={game.featured ? 'Spotlight Active (Click to remove)' : 'Click to feature in Spotlight'}
                         >
-                          {game.featured ? 'Yes' : 'No'}
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill={game.featured ? '#f59e0b' : 'none'} stroke="currentColor" strokeWidth="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          </svg>
+                          <span>{game.featured ? 'Yes' : 'No'}</span>
                         </button>
                       </td>
                       <td>
@@ -832,8 +867,8 @@ export default function GamesManagementView({
                           {game.status || 'draft'}
                         </span>
                       </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <div className="action-btn-group" style={{ justifyContent: 'flex-end' }}>
+                      <td style={{ textAlign: 'right', width: 140, minWidth: 140, whiteSpace: 'nowrap' }}>
+                        <div className="action-btn-group" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap', gap: 4 }}>
                           {/* View on Live Website Portal Link */}
                           <a
                             href={`${CONFIG.PORTAL_URL}/game/${encodeURIComponent(game.id || game._id)}`}
@@ -875,7 +910,7 @@ export default function GamesManagementView({
                             title="Delete Game"
                             onClick={() => {
                               if (window.confirm(`Delete "${game.title}"?`)) {
-                                onDeleteGame(game.id || game._id);
+                                onDeleteGame(gid);
                               }
                             }}
                           >

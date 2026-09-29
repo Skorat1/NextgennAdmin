@@ -380,22 +380,37 @@ function CategoryImageUploader({ image, onChange }) {
 }
 
 // ─── Render Category Thumbnail in List Table ──────────────────────────────────
-function renderCategoryThumb(cat, size = 22) {
-  const imgUrl = cat.image || (cat.icon && isImageUrl(cat.icon) ? cat.icon : null);
+function AdminCategoryThumbImage({ src, name, size, color }) {
+  const [failed, setFailed] = useState(false);
+  if (failed || !src) {
+    return <DefaultCategoryIcon size={size} color={color || 'var(--accent-brand)'} />;
+  }
+  return (
+    <img
+      src={src}
+      alt={name || 'Category'}
+      style={{
+        width: '100%',
+        height: '100%',
+        maxWidth: size + 6,
+        maxHeight: size + 6,
+        objectFit: 'contain',
+        display: 'block',
+        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.12))',
+        imageRendering: '-webkit-optimize-contrast'
+      }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function renderCategoryThumb(cat, size = 24) {
+  const imgUrl = cat?.image || (cat?.icon && isImageUrl(cat.icon) ? cat.icon : null);
   if (imgUrl) {
     const displayUrl = getCategoryDisplayUrl(imgUrl);
-    return (
-      <img
-        src={displayUrl}
-        alt={cat.name || 'Category'}
-        style={{ width: size, height: size, objectFit: 'contain', borderRadius: 4 }}
-        onError={(e) => {
-          e.currentTarget.style.display = 'none';
-        }}
-      />
-    );
+    return <AdminCategoryThumbImage src={displayUrl} name={cat?.name} size={size} color={cat?.color} />;
   }
-  return <DefaultCategoryIcon size={size} color={cat.color || 'var(--accent-brand)'} />;
+  return <DefaultCategoryIcon size={size} color={cat?.color || 'var(--accent-brand)'} />;
 }
 
 // ─── Main CategoriesView Component ───────────────────────────────────────────
@@ -535,17 +550,18 @@ export default function CategoriesView({
             <tbody>
               {(() => {
                 const filtered = categories.filter((c) => {
+                  if (!c) return false;
                   if (!searchQuery.trim()) return true;
                   const q = searchQuery.toLowerCase().trim();
-                  return (c.name && c.name.toLowerCase().includes(q)) || (c.id && c.id.toLowerCase().includes(q));
+                  return ((c.name && c.name.toLowerCase().includes(q)) || (c.id && String(c.id).toLowerCase().includes(q)));
                 });
 
                 const sortedCategories = [...filtered].sort((a, b) => {
-                  const aId = (a.id || a._id || '').toLowerCase();
-                  const bId = (b.id || b._id || '').toLowerCase();
+                  const aId = (a?.id || a?._id || '').toLowerCase();
+                  const bId = (b?.id || b?._id || '').toLowerCase();
                   if (aId === 'all') return -1;
                   if (bId === 'all') return 1;
-                  return (a.name || '').localeCompare(b.name || '');
+                  return (a?.name || '').localeCompare(b?.name || '');
                 });
 
                 if (sortedCategories.length === 0) {

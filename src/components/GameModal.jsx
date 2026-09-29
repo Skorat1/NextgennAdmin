@@ -491,8 +491,8 @@ export default function GameModal({ game, isOpen, onClose, onSave, categories = 
                           setIsCustomCategory(nextState);
                           if (!nextState) {
                             if (!formData.category && categories.length > 0) {
-                              const first = categories.find(c => c.id !== 'all');
-                              if (first) setFormData(prev => ({ ...prev, category: first.id }));
+                              const first = categories.find(c => c && c.id !== 'all' && c._id !== 'all');
+                              if (first) setFormData(prev => ({ ...prev, category: first.id || first._id }));
                             }
                           }
                         }}
@@ -540,10 +540,13 @@ export default function GameModal({ game, isOpen, onClose, onSave, categories = 
                           }
                         }}
                         options={[
-                          ...categories.filter(c => c.id !== 'all').map((c) => ({
-                            value: c.id,
-                            label: c.name.charAt(0).toUpperCase() + c.name.slice(1)
-                          })),
+                          ...categories.filter(c => c && c.id !== 'all' && c._id !== 'all').map((c) => {
+                            const rawName = c.name || c.id || c._id || 'Category';
+                            return {
+                              value: c.id || c._id || rawName.toLowerCase(),
+                              label: rawName.charAt(0).toUpperCase() + rawName.slice(1)
+                            };
+                          }),
                           { value: '__add_new__', label: '+ Add New Category...' }
                         ]}
                         minWidth="100%"
@@ -574,8 +577,8 @@ export default function GameModal({ game, isOpen, onClose, onSave, categories = 
                           onClick={() => {
                             setIsCustomCategory(false);
                             setCustomCategoryInput('');
-                            const first = categories.find(c => c.id !== 'all');
-                            if (first) setFormData(prev => ({ ...prev, category: first.id }));
+                            const first = categories.find(c => c && c.id !== 'all' && c._id !== 'all');
+                            if (first) setFormData(prev => ({ ...prev, category: first.id || first._id }));
                           }}
                           style={{
                             padding: '8px 12px',
